@@ -58,7 +58,10 @@ class UserBloc extends Bloc<UserEvent, UserState> {
   ) async {
     if (state.hasReachedMax || state.isNextPageLoading) return;
 
-    emit(state.copyWith(isNextPageLoading: true));
+    emit(state.copyWith(
+      isNextPageLoading: true,
+      failureOrSuccessOption: none(),
+    ));
 
     final nextPage = state.currentPage + 1;
     final result =

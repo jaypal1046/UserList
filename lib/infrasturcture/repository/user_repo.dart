@@ -1,7 +1,9 @@
 import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/i_repository/i_user_repository.dart';
 import '../../utils/api_failures.dart';
+import '../../utils/error_utils.dart';
 import '../datasource/user_remote.dart';
 
 import '../datasource/user_local.dart';
@@ -27,12 +29,29 @@ class UserRepository implements IUserRepository {
       }
 
       return Right(users);
-    } catch (e) {
+    } on DioException catch (e) {
       // If error (e.g., offline), try cache
-      final cached = await userLocal.getCachedUsers();
-      if (cached.isNotEmpty && page == 1) {
-        return Right(cached);
+      if (page == 1) {
+        final cached = await userLocal.getCachedUsers();
+        if (cached.isNotEmpty) {
+          return Right(cached);
+        }
       }
+
+      // Handle specific Dio errors
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        return const Left(ApiFailure.poorConnection());
+      }
+
+      if (e.response?.statusCode != null) {
+        return Left(ErrorUtils.getApiFailure(e.response!.statusCode!));
+      }
+
+      return Left(ApiFailure.other(error: e.message ?? 'Unknown network error'));
+    } catch (e) {
       return Left(ApiFailure.other(error: e.toString()));
     }
   }
@@ -42,6 +61,18 @@ class UserRepository implements IUserRepository {
     try {
       final user = await userRemote.fetchUserDetails(login);
       return Right(user);
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        return const Left(ApiFailure.poorConnection());
+      }
+
+      if (e.response?.statusCode != null) {
+        return Left(ErrorUtils.getApiFailure(e.response!.statusCode!));
+      }
+      return Left(ApiFailure.other(error: e.message ?? 'Unknown network error'));
     } catch (e) {
       return Left(ApiFailure.other(error: e.toString()));
     }

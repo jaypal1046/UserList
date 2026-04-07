@@ -17,7 +17,7 @@ Future<void> initInjection() async {
 
   final apiService = ApiService();
   await apiService.init(
-    baseUrl: 'https://reqres.in/api/',
+    baseUrl: 'https://api.github.com/',
     networkInfo: getIt(),
   );
   getIt.registerLazySingleton(() => apiService);

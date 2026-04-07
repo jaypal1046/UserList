@@ -4,6 +4,7 @@ import '../application/user_bloc.dart';
 import '../domain/entities/user_entity.dart';
 import 'user_detail_page.dart';
 
+import 'widgets/error_snackbar.dart';
 import 'widgets/user_card.dart';
 
 class UserListPage extends StatefulWidget {
@@ -55,99 +56,132 @@ class _UserListPageState extends State<UserListPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              onChanged: (query) {
-                context.read<UserBloc>().add(UserEvent.searchUsers(query));
-              },
-              decoration: InputDecoration(
-                hintText: 'Search developers by name...',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      body: BlocListener<UserBloc, UserState>(
+        listenWhen: (previous, current) =>
+            current.failureOrSuccessOption.isSome() &&
+            previous.failureOrSuccessOption != current.failureOrSuccessOption,
+        listener: (context, state) {
+          state.failureOrSuccessOption.fold(
+            () => null,
+            (either) => either.fold(
+              (failure) => ErrorSnackBar.show(context, failure),
+              (_) => null,
+            ),
+          );
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                onChanged: (query) {
+                  context.read<UserBloc>().add(UserEvent.searchUsers(query));
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search developers by name...',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
-          ),
+            Expanded(
+              child: BlocBuilder<UserBloc, UserState>(
+                builder: (context, state) {
+                  final filteredUsers = state.searchQuery.isEmpty
+                      ? state.users
+                      : state.users
+                          .where((user) => user.login
+                              .toLowerCase()
+                              .contains(state.searchQuery.toLowerCase()))
+                          .toList();
 
-          Expanded(
-            child: BlocBuilder<UserBloc, UserState>(
-              builder: (context, state) {
-                final filteredUsers = state.searchQuery.isEmpty 
-                    ? state.users 
-                    : state.users.where((user) => 
-                        user.login.toLowerCase().contains(state.searchQuery.toLowerCase())
-                      ).toList();
+                  if (state.isLoading && filteredUsers.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (state.isLoading && filteredUsers.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                  if (state.failureOrSuccessOption.isSome() &&
+                      filteredUsers.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              size: 48, color: Colors.red),
+                          const SizedBox(height: 16),
+                          const Text('Something went wrong.'),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blueAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: () => context
+                                .read<UserBloc>()
+                                .add(const UserEvent.fetchInitialUsers()),
+                            child: const Text('Try Again'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
-                if (state.failureOrSuccessOption.isSome() && filteredUsers.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
-                        const Text('Something went wrong.'),
-                        ElevatedButton(
-                          onPressed: () => context.read<UserBloc>().add(const UserEvent.fetchInitialUsers()),
-                          child: const Text('Try Again'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
+                  if (filteredUsers.isEmpty && !state.isLoading) {
+                    return const Center(child: Text('No developers found.'));
+                  }
 
-                if (filteredUsers.isEmpty) {
-                  return const Center(child: Text('No developers found.'));
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    context.read<UserBloc>().add(const UserEvent.fetchInitialUsers());
-                  },
-
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: state.hasReachedMax 
-                        ? filteredUsers.length 
-                        : filteredUsers.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index >= filteredUsers.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 32),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-
-                      final user = filteredUsers[index];
-                      return UserCard(
-                        user: user,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => UserDetailPage(user: user),
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      context
+                          .read<UserBloc>()
+                          .add(const UserEvent.fetchInitialUsers());
+                    },
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: state.hasReachedMax
+                          ? filteredUsers.length
+                          : filteredUsers.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index >= filteredUsers.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Center(
+                              child: state.isNextPageLoading
+                                  ? const CircularProgressIndicator()
+                                  : const SizedBox.shrink(),
                             ),
                           );
-                        },
-                      );
-                    },
-                  ),
-                );
-              },
+                        }
+
+                        final user = filteredUsers[index];
+                        return UserCard(
+                          user: user,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    UserDetailPage(user: user),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
